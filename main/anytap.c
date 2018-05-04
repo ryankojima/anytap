@@ -32,6 +32,10 @@
 #include "esp_system.h"
 #include "nvs_flash.h"
 
+#include "driver/spi_master.h"
+#include "soc/gpio_struct.h"
+#include "driver/gpio.h"
+
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 #include "lwip/sys.h"
@@ -46,6 +50,12 @@
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/error.h"
 #include "mbedtls/certs.h"
+
+
+#include "acc_task.h"
+
+RTC_DATA_ATTR int wake_count = 0;
+
 
 /* The examples use simple WiFi configuration that you can set via
    'make menuconfig'.
@@ -65,17 +75,28 @@ static EventGroupHandle_t wifi_event_group;
 const int CONNECTED_BIT = BIT0;
 
 /* Constants that aren't configurable in menuconfig */
+/*
+#define WEB_SERVER "maker.ifttt.com"
+#define WEB_PORT "443"
+#define WEB_URL "https://maker.ifttt.com/trigger/bulbevent/with/key/d1QyyEM_q-DjjKoKDpJTwC"
+*/
 #define WEB_SERVER "amazon.nunomo.com"
 #define WEB_PORT "3000"
-#define WEB_URL "https://amazon.nunomo.com"
+#define WEB_URL "https://amazon.nunomo.com/api/v1/device/doubletap"
+#define WEB_URL_BATTERY "https://amazon.nunomo.com/api/v1/device/battery"
+//#define WEB_URL "https://amazon.nunomo.com/"
 
-static const char *TAG = "example";
-
-static const char *REQUEST = "GET " WEB_URL " HTTP/1.0\r\n"
+static const char *TAG = "WIFI";
+/*
+static char *REQUEST = "GET " WEB_URL " HTTP/1.0\r\n"
     "Host: "WEB_SERVER"\r\n"
     "User-Agent: esp-idf/1.0 esp32\r\n"
     "\r\n";
-
+static char *REQUEST_BATTERY = "GET " WEB_URL_BATTERY " HTTP/1.0\r\n"
+    "Host: "WEB_SERVER"\r\n"
+    "User-Agent: esp-idf/1.0 esp32\r\n"
+    "\r\n";
+*/
 /* Root cert for howsmyssl.com, taken from server_root_cert.pem
 
    The PEM file was extracted from the output of this command:
@@ -88,6 +109,22 @@ static const char *REQUEST = "GET " WEB_URL " HTTP/1.0\r\n"
 */
 extern const uint8_t server_root_cert_pem_start[] asm("_binary_server_root_cert_pem_start");
 extern const uint8_t server_root_cert_pem_end[]   asm("_binary_server_root_cert_pem_end");
+
+char url_buffer[1000];
+
+char * make_request_string(char * url){
+  if(strlen(url) > 900){
+        ESP_LOGE(TAG, "Too long URL to request");
+        abort();
+  }
+  strcpy(url_buffer, "GET ");
+  strcat(url_buffer,url);
+  strcat(url_buffer," HTTP/1.0\r\n"
+    "Host: "WEB_SERVER"\r\n"
+		 "User-Agent: esp-idf/1.0 esp32\r\n\r\n");
+  return url_buffer;
+}
+
 
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
@@ -110,6 +147,7 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
     return ESP_OK;
 }
 
+bool wifi_initialized = false;
 static void initialise_wifi(void)
 {
     tcpip_adapter_init();
@@ -122,17 +160,29 @@ static void initialise_wifi(void)
         .sta = {
             .ssid = EXAMPLE_WIFI_SSID,
             .password = EXAMPLE_WIFI_PASS,
+			//.channel = 1,
         },
     };
     ESP_LOGI(TAG, "Setting WiFi configuration SSID %s...", wifi_config.sta.ssid);
     ESP_ERROR_CHECK( esp_wifi_set_mode(WIFI_MODE_STA) );
     ESP_ERROR_CHECK( esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config) );
     ESP_ERROR_CHECK( esp_wifi_start() );
+	wifi_initialized = true;
 }
+
+static xQueueHandle wifi_evt_queue = NULL;
+
 
 static void https_get_task(void *pvParameters)
 {
-    char buf[512];
+
+  uint32_t param;
+
+  while(!wifi_initialized){
+  	  vTaskDelay(20 / portTICK_PERIOD_MS);
+  }
+
+  char buf[512];
     int ret, flags, len;
 
     mbedtls_entropy_context entropy;
@@ -206,7 +256,19 @@ static void https_get_task(void *pvParameters)
         goto exit;
     }
 
-    while(1) {
+
+  
+	device_event_param event;
+	
+  for(;;){
+  if(xQueueReceive(wifi_evt_queue, &event, portMAX_DELAY)) {
+	lockDeepSleep();
+
+	//initialise_wifi();
+
+
+
+    //while(1) {
         /* Wait for the callback to set the CONNECTED_BIT in the
            event group.
         */
@@ -256,13 +318,32 @@ static void https_get_task(void *pvParameters)
 
         ESP_LOGI(TAG, "Cipher suite is %s", mbedtls_ssl_get_ciphersuite(&ssl));
 
+
+
+
+
+		
         ESP_LOGI(TAG, "Writing HTTP request...");
 
         size_t written_bytes = 0;
+		char *req;
         do {
+		  req=(char *)make_request_string(WEB_URL);
+		  if(event.event_type == BATTERY){
+			char url[100],work[20];
+			ESP_LOGI(TAG, "mv=%d",event.battery_mv);
+			sprintf(work,"%d",event.battery_mv);
+			strcpy(url,WEB_URL_BATTERY);
+			strcat(url,"/");
+			strcat(url,work);
+			req=(char *)make_request_string(url);
+			
+		  }
+		  ESP_LOGI(TAG, "REQUEST: %s", req);
+
             ret = mbedtls_ssl_write(&ssl,
-                                    (const unsigned char *)REQUEST + written_bytes,
-                                    strlen(REQUEST) - written_bytes);
+                                    (unsigned char *)req + written_bytes,
+                                    strlen(req) - written_bytes);
             if (ret >= 0) {
                 ESP_LOGI(TAG, "%d bytes written", ret);
                 written_bytes += ret;
@@ -270,7 +351,7 @@ static void https_get_task(void *pvParameters)
                 ESP_LOGE(TAG, "mbedtls_ssl_write returned -0x%x", -ret);
                 goto exit;
             }
-        } while(written_bytes < strlen(REQUEST));
+        } while(written_bytes < strlen(req));
 
         ESP_LOGI(TAG, "Reading HTTP response...");
 
@@ -325,17 +406,42 @@ static void https_get_task(void *pvParameters)
         static int request_count;
         ESP_LOGI(TAG, "Completed %d requests", ++request_count);
 
-        for(int countdown = 100; countdown >= 0; countdown--) {
-            ESP_LOGI(TAG, "%d...", countdown);
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
-        }
-        ESP_LOGI(TAG, "Starting again!");
-    }
+		//ESP_ERROR_CHECK( esp_wifi_stop() );
+		unlockDeepSleep();
+		//return;
+		
+		//}
+  }
+  }
 }
+
+
+
+void onClick(void *arg){
+  //uint32_t param=0;
+  device_event_param *event = (device_event_param *)arg;
+  ESP_LOGI(TAG,"Click event called.");
+  //if(isLockDeepSleep()) return;
+  //unlockDeepSleep();
+  xQueueSendToBack(wifi_evt_queue,(void *)event,0);
+  
+  
+}
+
 
 void app_main()
 {
-    ESP_ERROR_CHECK( nvs_flash_init() );
-    initialise_wifi();
+  nvs_flash_init();
+  if(wake_count == 0) ESP_ERROR_CHECK( nvs_flash_init() );
+	set_acc_wake_count(wake_count);
+	ESP_LOGI(TAG,"Boot. count=%d",wake_count++);
+    wifi_evt_queue = xQueueCreate(10, sizeof(device_event_param));
+	
+	set_click_callback(onClick);
+
     xTaskCreate(&https_get_task, "https_get_task", 8192, NULL, 5, NULL);
+    xTaskCreate(&monitor_acc_task, "monitor_acc_task", 8192, NULL, 5, NULL);
+
+	initialise_wifi();
+
 }
