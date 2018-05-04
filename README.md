@@ -1,5 +1,7 @@
-# Hello World Example
+# Anytap
 
-Starts a FreeRTOS task to print "Hello World"
+- main/ main application files (Controlls Network related thing)
 
-See the README.md file in the upper level 'examples' directory for more information about examples.
++ components
+|- accelerometer : Controlls accelerometer (ADXL335)
+
