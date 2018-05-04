@@ -3,7 +3,7 @@
 # project subdirectory.
 #
 
-PROJECT_NAME := wifi-test
+PROJECT_NAME := anytap
 
 include $(IDF_PATH)/make/project.mk
 

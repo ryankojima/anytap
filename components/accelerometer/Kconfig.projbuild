@@ -1,0 +1,46 @@
+menu "Anytap Accelerometer ADXL345 Configuration"
+
+config ACC_INT1
+    int "Pin number of INT1"
+	default 15
+	help
+		Pin number for INT1
+
+config ACC_INT2
+	int "Pin number of INT2"
+	default 32
+	help
+		Pin number for INT2
+
+config GPIO_LED
+	int "GPIO pin number"
+	default 13
+	help
+		Pin number of GPIO LED
+
+config PIN_NUM_MISO
+    int "MISO pin number"
+	default 19
+	help
+		Pin number of MISO
+
+config PIN_NUM_MOSI
+    int "MOSI pin number"
+	default 18
+	help
+		Pin number of MOSI
+
+config PIN_NUM_CLK
+    int "CLK pin number"
+	default 22
+	help
+		Pin number of SPI CLK
+
+config PIN_NUM_CS
+    int "CS pin number"
+	default 5
+	help
+		Pin number of SPI CS
+
+
+endmenu

@@ -24,9 +24,18 @@ Task around accelerometer
 
 #include "acc_task.h"
 
-#define ACC_INT1 15
-#define ACC_INT2 32
-#define GPIO_LED 13
+//Interruption pins
+#define ACC_INT1 CONFIG_ACC_INT1
+#define ACC_INT2 CONFIG_ACC_INT2
+
+//GPIO LED pin
+#define GPIO_LED CONFIG_GPIO_LED
+
+/* SPI related configuration */
+#define PIN_NUM_MISO CONFIG_PIN_NUM_MISO
+#define PIN_NUM_MOSI CONFIG_PIN_NUM_MOSI
+#define PIN_NUM_CLK  CONFIG_PIN_NUM_CLK
+#define PIN_NUM_CS   CONFIG_PIN_NUM_CS
 
 #define V_REF   1100
 #define ADC_BATTERY (ADC1_CHANNEL_7)

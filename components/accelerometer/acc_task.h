@@ -1,8 +1,3 @@
-/* SPI related configuration */
-#define PIN_NUM_MISO 19
-#define PIN_NUM_MOSI 18
-#define PIN_NUM_CLK  22
-#define PIN_NUM_CS   5
 
 typedef enum
 {
